@@ -1,5 +1,4 @@
 import os
-from queue_service import conf
 from rlockertools.resourcelocker import ResourceLocker
 
 
@@ -28,10 +27,10 @@ class ResourceLockerConnection(ResourceLocker, metaclass=Singleton):
     # Resource Locker library will be instantiated against the provided environment variable
     # that will be injected once the container starts.
     # If it is None, it will try to use the one that is provided from the defaultconf.yaml file
-    def __init__(self):
+    def __init__(self, conf_file):
         super(ResourceLockerConnection, self).__init__(
             instance_url=os.environ.get("RESOURCE_LOCKER_URL")
-            or conf["svc"].get("RESOURCE_LOCKER_URL"),
+            or conf_file["svc"].get("RESOURCE_LOCKER_URL"),
             token=os.environ.get("RESOURCE_LOCKER_TOKEN")
-            or conf["svc"].get("RESOURCE_LOCKER_TOKEN"),
+            or conf_file["svc"].get("RESOURCE_LOCKER_TOKEN"),
         )

@@ -1,4 +1,5 @@
 from service_base.connection import ResourceLockerConnection
+from queue_service import conf
 import json
 import sys
 import time
@@ -12,7 +13,7 @@ by_data_label_and_priority = lambda q: (q.data.get("label"), q.priority, q.id)
 by_data_name_and_priority = lambda q: (q.data.get("name"), q.priority, q.id)
 
 
-rlocker = ResourceLockerConnection()
+rlocker = ResourceLockerConnection(conf_file=conf)
 
 
 def json_continuously_loader(json_string, attempts=10):

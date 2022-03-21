@@ -10,7 +10,7 @@ from queue_service.utils import queue_has_beat
 from service_base.connection import ResourceLockerConnection
 
 
-rlocker = ResourceLockerConnection()
+rlocker = ResourceLockerConnection(conf_file=conf)
 
 
 class QueueService(ServiceBase):

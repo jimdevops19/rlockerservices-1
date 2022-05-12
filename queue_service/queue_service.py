@@ -8,7 +8,7 @@ from queue_service import conf, get_time
 from queue_service.rqueue import Rqueue
 from queue_service.utils import queue_has_beat
 from service_base.connection import ResourceLockerConnection
-
+import threading
 
 rlocker = ResourceLockerConnection()
 
@@ -41,41 +41,24 @@ class QueueService(ServiceBase):
             else:
                 raise Exception("Group type should be either name or label!")
 
-            if not resources == []:
+            if resources:
                 group_queues = group.get("queues")
                 next_queue = group_queues.pop(0)
                 next_resource = resources.pop(0)
-                if queue_has_beat(
-                    queue_id=next_queue.id,
-                    in_last_x_seconds=conf["svc"].get("QUEUE_BEAT_TIMEOUT"),
-                ):
-                    attempt_lock = rlocker.lock_resource(
-                        next_resource,
-                        signoff=next_queue.data.get("signoff"),
-                        link=next_queue.data.get("link"),
-                    )
-                    print(attempt_lock.json())
+                # Prepare actions before entering to the thread:
+                # The convention for the thread name,
+                # please do not change unless decided to change naming convention
 
-                    # If attempt to lock was successful:
-                    if attempt_lock.json().get("is_locked"):
-                        rlocker.change_queue(
-                            next_queue.id,
-                            status=const.STATUS_FINISHED,
-                            final_resource=next_resource.get('name'),
-                        )
-                    else:
-                        rlocker.change_queue(
-                            next_queue.id,
-                            status=const.STATUS_FAILED,
-                            description=attempt_lock.text[:2048],
-                        )
-                else:
-                    rlocker.abort_queue(
-                        next_queue.id,
-                        abort_msg=f"This queue was an orphan queue! \n"
-                        f"There was no associated client, because queue was not beating "
-                        f' in the last {conf["svc"].get("QUEUE_BEAT_TIMEOUT")} seconds',
+                thread_name = f"Thread-{next_queue.id}"
+                alive_threads_names = list(map(lambda t: t.name, threading.enumerate()))
+                is_thread_already_fired = thread_name in alive_threads_names
+                if not is_thread_already_fired:
+                    t = threading.Thread(
+                        name=thread_name,
+                        target=self.queue_beat_check,
+                        args=(next_queue, next_resource)
                     )
+                    t.start()
 
         return None
 
@@ -134,6 +117,39 @@ class QueueService(ServiceBase):
             )
 
         return None
+
+    def queue_beat_check(self, next_queue, next_resource):
+        if queue_has_beat(
+                queue_id=next_queue.id,
+                in_last_x_seconds=conf["svc"].get("QUEUE_BEAT_TIMEOUT"),
+        ):
+            attempt_lock = rlocker.lock_resource(
+                next_resource,
+                signoff=next_queue.data.get("signoff"),
+                link=next_queue.data.get("link"),
+            )
+            print(attempt_lock.json())
+
+            # If attempt to lock was successful:
+            if attempt_lock.json().get("is_locked"):
+                rlocker.change_queue(
+                    next_queue.id,
+                    status=const.STATUS_FINISHED,
+                    final_resource=next_resource.get('name'),
+                )
+            else:
+                rlocker.change_queue(
+                    next_queue.id,
+                    status=const.STATUS_FAILED,
+                    description=attempt_lock.text[:2048],
+                )
+        else:
+            rlocker.abort_queue(
+                next_queue.id,
+                abort_msg=f"This queue was an orphan queue! \n"
+                f"There was no associated client, because queue was not beating "
+                f' in the last {conf["svc"].get("QUEUE_BEAT_TIMEOUT")} seconds',
+            )
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
